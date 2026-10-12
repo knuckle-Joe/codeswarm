@@ -1,10 +1,19 @@
 # codeswarm
 
-Animated history of a git repository: people and the files they change swirl around each other as the project unfolds. A Python rewrite of Michael Ogawa's [code_swarm](http://vis.cs.ucdavis.edu/~ogawa/codeswarm/) (2008) that runs straight from a repository: no log export, no XML, no Java.
+Animated history of a git repository: people and the files they change swirl around each other as the project unfolds. A Python rewrite of Michael Ogawa's [code_swarm](http://vis.cs.ucdavis.edu/~ogawa/codeswarm/) (2008) that runs straight from a repository: no log export, no XML, no Java. With a few bells & whistles I added.
 
 ```sh
-codeswarm owner/repo                          # watch it in a window
+codeswarm owner/repo                            # watch it in a window
 codeswarm owner/repo --duration 120 -o out.mp4  # or make a two-minute video
+codeswarm owner/repo --preset original          # like in the original software
+codeswarm owner/repo --preset classic           # like rictic's fork, with the SE config (basically the starting point for this port)
+```
+
+I want to thank the original authors for sharing this. These are the repositories and configurations I used:
+```
+https://github.com/itkang/codeswarm [YKK/itkang]
+https://github.com/rictic/code_swarm [Peter Burns/rictic]
+https://unix.stackexchange.com/q/108158 [StackExchange U&L, user44370 for the config]
 ```
 
 ## Install
@@ -190,7 +199,7 @@ The simulation was checked frame by frame against the original Java program, com
 `tools/` holds the scripts used to verify each part; they run on your machine against any repository:
 
 ```sh
-python tools/p0_check.py ~/code/repo owner/repo     # history extraction vs git
+python tools/p0_check.py ~/code/repo owner/repo      # history extraction vs git
 python tools/p2_check.py owner/repo                  # video export
 python tools/p3_check.py owner/repo --real           # people, colours, avatars
 python tools/p4_check.py owner/repoA owner/repoB     # gaps, duration, cards, several repositories
