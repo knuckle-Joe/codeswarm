@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# codeswarm outputs (videos, frames, reports) when run inside the repo
+*.mp4
+*.mkv
+*.mov
+*.webm
+frames*/
+*_report*.txt
+p2_work/
+p4_work/
+
+# local working folders
+cache/
+out/
+reports/
+p*_work/
+*.csv

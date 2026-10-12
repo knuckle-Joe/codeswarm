@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeswarm"
+version = "0.14.0"
+description = "Animate the commit history of a git repository (code_swarm rewrite)"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+readme = "README.md"
+authors = [{ name = "codeswarm rewrite contributors" }]
+keywords = ["git", "visualization", "code_swarm", "animation", "repository history"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Environment :: X11 Applications",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = ["numpy", "moderngl>=5.8", "pygame-ce>=2.4"]
+
+[project.optional-dependencies]
+video = ["imageio-ffmpeg"]   # bundled ffmpeg, only needed if ffmpeg is not installed
+
+[project.scripts]
+codeswarm = "codeswarm.cli:main"
+
+[tool.setuptools]
+packages = ["codeswarm"]
+
+[tool.setuptools.package-data]
+codeswarm = ["assets/*.png", "assets/fonts/*.ttf", "assets/fonts/*.txt"]
