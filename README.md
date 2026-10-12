@@ -1,5 +1,7 @@
 # codeswarm
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/44348bd8-2c15-432a-a6f2-6b8566b09973" />
+
 Animated history of a git repository: people and the files they change swirl around each other as the project unfolds. A Python rewrite of Michael Ogawa's [code_swarm](http://vis.cs.ucdavis.edu/~ogawa/codeswarm/) (2008) that runs straight from a repository: no log export, no XML, no Java. With a few bells & whistles I added.
 
 ```sh
