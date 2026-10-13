@@ -182,6 +182,8 @@ The simulation was checked frame by frame against the original Java program, com
 
 - *Tracked files land and stick* (`--hubs`, `--hubs 0` for the original): the original moves a file to the ring of the person who changed it last like a spring (1% of the way each frame, keeping 90% of its speed), so it overshoots, swings back and circles its place; on a busy history the most changed files spend most of their time away from it. The 10 busiest files changed by at least 2 people lately (`--hub-min-people`) now move with no momentum: each frame they cover 30% of the distance left (`--hub-rate`), at most 20 px (`--hub-speed`), then lock onto their place and ride along with the person. They arrive sooner and stay put; people move exactly as before. `--hub-follow` below 1 aims between the last editor and everyone who changed the file lately; `--hub-gather` also pulls people toward those files.
 - *The swarm keeps out of the panels* (`--no-keep-clear` for the original): people, and the files around them, are nudged out of the rectangles the caption and legend, the file list, the repository panel and the ticker actually take, so the open space between and below them is still used. The video, the PNG frames and the live window show the same swarm.
+- *Very busy histories settle* (`--folders 0 --file-motion original --pace 0` for the original): in a project with tens of thousands of files and dozens of commits a day, nothing ever settles before the next change arrives. Three things fix that. For very large projects (above 10,000 files) a sphere stands for a folder (`drivers/net/`, `fs/btrfs/`) instead of a file, so the same few spheres come back commit after commit (`--folders auto|0|1|2|3`); the colour still follows the kind of files changed. Every file now reaches its person and stays there, with no momentum (`--file-motion settle`). And the video never shows more than 8 commits per second (`--pace`): busy periods play slower, quiet ones are unaffected, the date shown stays real. `--duration` turns the pace limit off.
+- *Crowded histories stay readable* (`--crowd 0 --person-spacing 0 --avatar-focus 0` for the original): the original keeps everyone on screen long after their last commit, which suits a handful of people but buries a very large project under hundreds of avatars. When more than about 60 people are on screen (`--crowd`), everything fades faster so the count stays near that; quiet projects are unaffected. People closer than 70 px are pushed apart so avatars and their rings stop stacking (`--person-spacing`), and only the 15 most active people lately plus the few committing right now show a picture (`--avatar-focus`); the others show their name, a little dimmer.
 - *Rings stay on screen* (`--bounds legacy` for the original): people are kept far enough from the edge for their whole ring of files to be visible.
 
 **Look**
@@ -214,6 +216,8 @@ python tools/p8_check.py owner/repo                  # messages, rings, releases
 python tools/p9_check.py owner/repo                  # tracked files land and stick, ticker
 python tools/p10_check.py owner/repo                 # swarm out of the panels, names stay put
 python tools/p11_check.py                            # broken-clock dates, robots, avatar limit (builds its own test repository)
+python tools/p12_check.py owner/repo                 # crowded histories: crowd size, spacing, avatar focus
+python tools/p13_check.py owner/repo                 # very busy histories: folders, settle, pace limit
 python tools/edge_check.py owner/repo                # share of files off screen
 ```
 
@@ -270,6 +274,11 @@ Defaults are those of the default look (no `--preset`) at 1920x1080; sizes are b
 | flag | value | default | what it does |
 |---|---|---|---|
 | `--merge-identities` / `--no-merge-identities` |  | on | treat names/emails/GitHub logins of one person as one (default on) |
+| `--folders` | auto \| 0 \| 1 \| 2 \| 3 | auto | show folders instead of files: auto = for very large projects only (default), 0 = files, 1-3 = folders that many levels deep (drivers/net/, fs/btrfs/ ...) |
+| `--file-motion` | settle \| original | settle | settle = every file reaches its person quickly and stays (default); original = springy flight that overshoots and circles |
+| `--pace` | N | 8 | at most N commits per second of video: busy periods play slower, the date stays real (default 8, 0 = no limit; --duration turns it off) |
+| `--crowd` | N | 60 | busy histories fade faster so about N people stay on screen (default 60, 0 = original) |
+| `--person-spacing` | PX | 70 | people closer than PX (before ui scale) are pushed apart so avatars do not stack (default 70, 0 = original) |
 | `--keep-bots` |  | on | show dependabot, pre-commit-ci and other bots (hidden by default) |
 | `--alias` | 'OLD=NEW' |  | show OLD as NEW (repeatable) |
 | `--exclude-author` | GLOB |  | hide matching people (repeatable) |
@@ -285,6 +294,7 @@ Defaults are those of the default look (no `--preset`) at 1920x1080; sizes are b
 | `--avatar-fallback` | identicon \| retro \| robohash \| monsterid \| wavatar \| mp \| none | identicon | picture for people without one (default identicon) |
 | `--avatar-dir` | DIR |  | folder for --avatars local |
 | `--github-token` | GITHUB_TOKEN |  | GitHub token for avatar lookups (or set GITHUB_TOKEN) |
+| `--avatar-focus` | N | 15 | pictures shown only for the N most active people lately and whoever is committing; the others show their name (default 15, 0 = everyone alive) |
 | `--avatar-limit` | N | 1000 | pictures for the N most active people only, the others show their name (default 1000, 0 = everyone) |
 | `--github-api-budget` | GITHUB_API_BUDGET | 50 | max GitHub API calls without a token (default 50) |
 | `--size` | SIZE | 1920x1080 | frame size, e.g. 1280x720 |

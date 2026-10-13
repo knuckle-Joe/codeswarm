@@ -114,6 +114,12 @@ DEFAULTS = {
     "hub_gather": False,           # also pull people toward their hubs (0.10 behaviour)
     "dim_idle_avatars": False,     # avatars of idle people fade like their names
     "keep_clear": False,           # people (and their files) stay out of the panels
+    "folders": 0,                  # 0 = files | 1..3 = folders that deep | auto = folders for very large projects
+    "file_motion": "original",     # original = springy | settle = every file reaches its person and stays
+    "pace": 0,                     # at most this many commits per second of video (0 = no limit)
+    "crowd_target": 0,             # busy histories fade faster so about this many people stay on screen (0 = original)
+    "person_spacing": 0,           # people closer than this (px before ui scale) are pushed apart (0 = original)
+    "avatar_focus": 0,             # pictures only for the N most active people lately + whoever is committing (0 = all)
     "file_size": "original",       # original = grows with sqrt(changes) | gentle = only a little bigger when busy
     # ingest options (new)
     "author_key": "name",          # name | email  (legacy git recipe used email)
@@ -206,7 +212,9 @@ PRESETS["default"] = dict(PRESETS["classic"], color_rules=[], colors="auto",
                           auto_caption=True, popular_count=20, show_stats=True, people_count=5,
                           histogram_scale=2, histogram_max=0.22,
                           commit_text="both", status_flash=True, author_ticks=True, show_releases=True,
-                          hubs=10, dim_idle_avatars=True, ticker_lines=8, file_size="gentle", keep_clear=True)
+                          hubs=10, dim_idle_avatars=True, ticker_lines=8, file_size="gentle", keep_clear=True,
+                          crowd_target=60, person_spacing=70, avatar_focus=15,
+                          folders="auto", file_motion="settle", pace=8)
 PRESETS["classic"]["name_layout"] = "spread"
 PRESETS["default"]["name_layout"] = "spread"
 

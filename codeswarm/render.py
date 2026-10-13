@@ -614,6 +614,7 @@ class Renderer:
         living_p = np.nonzero(p.life[: p.n] > 0)[0]
         self._subjects = self._name_subjects(sw) if st.get("commit_text") and \
             self.cfg.get("commit_text", "off") in ("names", "both") else {}
+        self._focus = self._update_focus(sw, living_p)
         self._layout = self._layout_names(sw, living_p) if st.get("name_spread") else None
         if st["draw_names_halos"]:
             self._draw_names(sw, living_p, fc)
@@ -840,6 +841,9 @@ class Renderer:
     def _name_alpha(self, sw, i):
         life = int(sw.people.life[i])
         a = float(java_alpha(life, self.wrap))
+        focus = getattr(self, "_focus", None)
+        if focus is not None:
+            a *= 0.55 + 0.45 * focus.get(int(i), 0.0)
         if self.cfg.get("dim_idle_names"):
             # bright while active, settles to ~40% while idle, then the usual fade
             frac = life / float(sw.person_life0 or 1)
@@ -880,6 +884,40 @@ class Renderer:
                 break
         return out
 
+    def _update_focus(self, sw, living_p):
+        """avatar_focus N: pictures only for the N most active people lately and
+        the 6 most recent committers (last 1.5 seconds); the others show their name,
+        a little dimmer.  person -> 0..1, eased so pictures fade in and out."""
+        n = int(self.cfg.get("avatar_focus", 0) or 0)
+        if not n or not self.avatar_px:
+            return None
+        fps = float(self.cfg.get("fps", 24))
+        want = {pi for _, _, pi in sw.active_people(n)} if sw.window_ms else set()
+        if not want:                                   # no window: most changes so far
+            t = sw.people.touches[: sw.people.n]
+            want = set(np.argsort(-t)[:n].tolist())
+        # plus the people committing right now: the 6 most recent, within 1.5 seconds
+        recent = sorted(((fr, pi) for pi, (fr, _) in sw.person_commit.items() if sw.frame - fr < fps * 1.5),
+                        reverse=True)[:6]
+        want.update(pi for _, pi in recent)
+        self._focus_want = want
+        state = self.__dict__.setdefault("_focus_state", {})
+        last = self.__dict__.get("_focus_frame")
+        if last is not None and sw.frame < last:
+            state.clear()
+        k = 1.0 - 0.85 ** max(1, sw.frame - (last if last is not None else sw.frame - 1))
+        self._focus_frame = sw.frame
+        out = {}
+        for pi in living_p:
+            pi = int(pi)
+            a = state.get(pi, 1.0 if pi in want else 0.0)
+            a += ((1.0 if pi in want else 0.0) - a) * k
+            state[pi] = out[pi] = a
+        for pi in list(state):
+            if pi not in out:
+                del state[pi]
+        return out
+
     def _subject_font(self):
         f = getattr(self, "_sfont", None)
         if f is None:
@@ -911,6 +949,9 @@ class Renderer:
             x, y = p.pos[i]
             sx, sy = x * k, y * k
             tex = self._avatar(sw.person_names[i]) if self.avatar_px else None
+            focus = getattr(self, "_focus", None)
+            if tex is not None and focus is not None and focus.get(int(i), 0.0) < 0.3:
+                tex = None                                 # no picture shown: no obstacle
             if tex is not None:
                 size = tex.size[0]
                 top = sy - (size - (5 if show_name else 15) * k)
@@ -1065,9 +1106,11 @@ class Renderer:
                     self.drawn_labels.append((sx + dx - tw / 2.0, y1, sx + dx + tw / 2.0, y1 + th,
                                               235 * subj[1] * sub_f, int(i)))
             tex = self._avatar(name) if self.avatar_px else None
-            if tex is not None:
+            focus = getattr(self, "_focus", None)
+            fa = 1.0 if focus is None else focus.get(int(i), 0.0)
+            if tex is not None and fa > 0.02:
                 size = tex.size[0]
-                alpha = min(max(life - 80, 0), 255) / 255.0       # tint(255,255,255,max(0,life-80))
+                alpha = min(max(life - 80, 0), 255) / 255.0 * fa  # tint(255,255,255,max(0,life-80))
                 if self.cfg.get("dim_idle_avatars"):
                     frac = life / float(sw.person_life0 or 1)
                     alpha *= 0.3 + 0.7 * min(max((frac - 0.3) / 0.5, 0.0), 1.0)
@@ -1209,7 +1252,8 @@ class Renderer:
         f = self.fonts.normal
         lh = f.get_linesize() + 1
         days = self.cfg.get("popular_window_days")
-        title = ("Most active files (last %g days)" % days) if days else "Most changed files"
+        what = "folders" if self.cfg.get("_folders") else "files"
+        title = ("Most active %s (last %g days)" % (what, days)) if days else "Most changed " + what
         y0 = self._top
         # keep the list above the histogram
         room = int((self.hist_top() - 8 - y0) // lh) - 1
@@ -1249,13 +1293,15 @@ class Renderer:
         rows.append(("head", "Repository"))
         rows.append(("kv", ("Commits", num(st["commits"]), "of " + num(tot["commits"]) if tot else "")))
         rows.append(("kv", ("People", num(st["people"]), ("of %s" % num(tot["people"])) if tot else "")))
-        rows.append(("kv", ("Files", num(st["files"]), ("of %s" % num(tot["files"])) if tot else "")))
+        rows.append(("kv", ("Folders" if self.cfg.get("_folders") else "Files", num(st["files"]),
+                            ("of %s" % num(tot["files"])) if tot else "")))
         if days:
             rows.append(("gap", None))
             rows.append(("head", "Last %g days" % days))
             rows.append(("kv", ("Commits", num(st["w_commits"]), "")))
             rows.append(("kv", ("Active people", num(st["w_people"]), "")))
-            rows.append(("kv", ("Files changed", num(st["w_files"]), "")))
+            rows.append(("kv", ("Folders changed" if self.cfg.get("_folders") else "Files changed",
+                                num(st["w_files"]), "")))
             s_ = st["w_status"]
             parts = []
             for code, word in (("A", "added"), ("M", "changed"), ("D", "deleted"), ("R", "moved")):

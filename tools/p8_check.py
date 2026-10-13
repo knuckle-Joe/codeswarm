@@ -52,7 +52,8 @@ def check(name, ok, detail=""):
 
 
 def prepare(source, **over):
-    cfg = build_config("default", overrides=dict({"seed": 5, "avatars": "none"}, **over))
+    # pace 0: these checks look at single frames of the drawing, not at the pace limit (see p13)
+    cfg = build_config("default", overrides=dict({"seed": 5, "avatars": "none", "pace": 0}, **over))
     ev, infos = load_many([source], cfg, a.cache_dir, refresh=False)
     ev, _, _ = build_people(ev, cfg)
     cfg["color_rules"] = auto_rules(ev)

@@ -49,7 +49,8 @@ def check(name, ok, detail=""):
 
 
 ok = True
-cfg = build_config("default", overrides={"seed": 5, "avatars": "none"})
+# springy files and no pace: this check compares the tracked files with the original motion (see p13)
+cfg = build_config("default", overrides={"seed": 5, "avatars": "none", "file_motion": "original", "pace": 0})
 ev, infos = load_many([a.source], cfg, a.cache_dir, refresh=False)
 ev, _, _ = build_people(ev, cfg)
 cfg["color_rules"] = auto_rules(ev)

@@ -218,6 +218,16 @@ class Swarm:
         self.track = None              # measuring: {file} whose ring target is recorded
         self.keepout = []              # keep_clear: panel rectangles (sim coordinates) people stay out of
         self.keepout_fn = None         # set by the app: swarm -> rectangles, asked every few frames
+        # crowd control: busy histories fade faster so about crowd_target people stay on screen
+        self.crowd_target = int(c.get("crowd_target", 0) or 0)
+        self.crowd_m = 1.0             # current fade speed-up (1 = original)
+        self.person_spacing = float(c.get("person_spacing", 0) or 0)
+        # pace: at most `pace` commits per second of video (busy periods play slower)
+        self.pace = float(c.get("pace", 0) or 0)
+        self.pace_per_frame = self.pace / float(c.get("fps", 24)) if self.pace else 0.0
+        self._pace_budget = 1.0
+        # settle: every file reaches its person's ring with no momentum and locks on
+        self.file_motion = c.get("file_motion", "original")
         self.track_target = {}
         self.hub_gather = bool(c.get("hub_gather", False))
         self._hub_slot = {}
@@ -238,12 +248,12 @@ class Swarm:
     def _random_location(self):
         return np.array([self.w * self.rng.random(), self.h * self.rng.random()], np.float32)
 
-    def _new_file(self, path, repo=""):
+    def _new_file(self, path, repo="", kind=""):
         i = self.files.add()
         f = self.files
         f.life[i] = self.file_life0
         f.touches[i] = 1
-        f.color[i] = self.colors.color_for(path, repo)
+        f.color[i] = self.colors.color_for(kind or path, repo)
         f.pos[i] = self._random_location()
         # PhysicsEngine.startVelocity(FileNode)
         v = np.array([self.rng.random() * 2 - 1, self.rng.random() * 2 - 1])
@@ -298,12 +308,20 @@ class Swarm:
         next_date = self.prev_date + self.update_delta
         ev = self.events
         f, p = self.files, self.people
+        if self.pace:
+            self._pace_budget = min(self._pace_budget + self.pace_per_frame, max(1.0, self.pace_per_frame))
         while self.ev_i < len(ev) and ev[self.ev_i].date < next_date:
             e = ev[self.ev_i]
+            if self.pace and e.commit not in frame_commits:
+                if self._pace_budget < 1.0:
+                    # pace limit: the rest waits; time stops at the next commit
+                    next_date = max(self.prev_date + 1, e.date)
+                    break
+                self._pace_budget -= 1.0
             self.ev_i += 1
             fi = self.file_index.get(e.path)
             if fi is None:
-                fi = self._new_file(e.path, getattr(e, "repo", ""))
+                fi = self._new_file(e.path, getattr(e, "repo", ""), getattr(e, "kind", ""))
             else:                                   # FileNode.freshen
                 f.life[fi] = self.file_life0
                 f.touches[fi] += 1
@@ -445,6 +463,8 @@ class Swarm:
                 # each pair is visited twice (as pNode and as n): factor 2
                 P += 2.0 * (s[..., None] * u).sum(axis=1)
             p.pos[p_alive] = P.astype(np.float32)
+            if self.person_spacing and len(p_alive) > 1:
+                self._space_people(p_alive)
 
             if self.keepout:
                 self._keep_out(p_alive)
@@ -484,25 +504,44 @@ class Swarm:
             if tgt_f:
                 idx = np.array(tgt_f)
                 T = np.array(tgt_xy, np.float32)
-                f.pos[idx] += -0.01 * (f.pos[idx] - T)
+                if self.file_motion == "settle":
+                    D = T.astype(np.float64) - f.pos[idx]
+                    step = D * self.hub_rate
+                    ln = np.linalg.norm(step, axis=1, keepdims=True)
+                    v = self.hub_speed
+                    step = np.where(ln > v, step / np.maximum(ln, 1e-9) * v, step)
+                    newp = f.pos[idx] + step
+                    near = np.linalg.norm(D, axis=1) < HUB_LOCK
+                    newp[near] = T[near]
+                    f.pos[idx] = newp.astype(np.float32)
+                    f.last[idx] = f.pos[idx]           # no momentum: no overshoot, no orbit
+                else:
+                    f.pos[idx] += -0.01 * (f.pos[idx] - T)
 
         # --- onUpdate: edges decay, nodes verlet + decay ---------------
+        e_dec, f_dec, p_dec = self.edge_dec, self.file_dec, self.person_dec
+        if self.crowd_target:
+            # more people alive than the target: everything fades faster (smoothly)
+            want = min(max((len(p_alive) / float(self.crowd_target)) ** 3, 1.0), 25.0)
+            self.crowd_m += (want - self.crowd_m) * 0.05
+            if self.crowd_m > 1.0:
+                e_dec, f_dec, p_dec = e_dec * self.crowd_m, f_dec * self.crowd_m, p_dec * self.crowd_m
         el = self.edge_life[:ne]
-        el[e_alive] = np.maximum(el[e_alive] + self.edge_dec, 0)
+        el[e_alive] = np.maximum(el[e_alive] + e_dec, 0)
 
         fa = np.nonzero(f_alive)[0]
         if len(fa):
             v = f.pos[fa] - f.last[fa]
             f.last[fa] = f.pos[fa]
             f.pos[fa] += v * FILE_FRICTION
-            f.life[fa] = np.maximum(f.life[fa] + self.file_dec, 0)
+            f.life[fa] = np.maximum(f.life[fa] + f_dec, 0)
         if self.hub_count and self.hubs:
             self._move_hubs()
         if len(p_alive):
             v = p.pos[p_alive] - p.last[p_alive]
             p.last[p_alive] = p.pos[p_alive]
             p.pos[p_alive] += v * PERSON_FRICTION
-            p.life[p_alive] = np.maximum(p.life[p_alive] + self.person_dec, 0)
+            p.life[p_alive] = np.maximum(p.life[p_alive] + p_dec, 0)
             pp = p.pos[p_alive]
             if self.bounds == "legacy":
                 pp[:, 0] = np.clip(pp[:, 0], 50, self.w - 50)
@@ -517,6 +556,49 @@ class Swarm:
                 pp[:, 0] = np.clip(pp[:, 0], np.maximum(m, 50), self.w - np.maximum(m, 50))
                 pp[:, 1] = np.clip(pp[:, 1], np.maximum(m, 45), self.h - np.maximum(m, 15 + self.bottom_reserve))
             p.pos[p_alive] = pp
+
+    @staticmethod
+    def paced_frames(events, delta, pace_per_frame):
+        """Frames a paced run takes (same rule as step(), without the physics)."""
+        if not events:
+            return 0
+        i, n, frames, budget = 0, len(events), 0, 1.0
+        prev = events[0].date
+        while i < n:
+            frames += 1
+            nxt = prev + delta
+            budget = min(budget + pace_per_frame, max(1.0, pace_per_frame))
+            seen = set()
+            while i < n and events[i].date < nxt:
+                c = events[i].commit
+                if c not in seen:
+                    if budget < 1.0:
+                        nxt = max(prev + 1, events[i].date)
+                        break
+                    budget -= 1.0
+                    seen.add(c)
+                i += 1
+            prev = nxt
+        return frames
+
+    def _space_people(self, alive):
+        """People closer than person_spacing are pushed apart (at most 1.5 px
+        a frame each), so avatars and their rings stop stacking up."""
+        p = self.people
+        P = p.pos[alive].astype(np.float64)
+        D = P[:, None, :] - P[None, :, :]
+        d = np.sqrt((D ** 2).sum(-1))
+        np.fill_diagonal(d, 1e9)
+        sp = self.person_spacing
+        close = d < sp
+        if not close.any():
+            return
+        push = np.where(close, (sp - d) * 0.04, 0.0)
+        u = D / np.maximum(d, 1e-6)[..., None]
+        mv = (push[..., None] * u).sum(1)
+        ln = np.linalg.norm(mv, axis=1, keepdims=True)
+        mv = np.where(ln > 1.5, mv / np.maximum(ln, 1e-9) * 1.5, mv)
+        p.pos[alive] = (P + mv).astype(np.float32)
 
     def _keep_out(self, alive):
         """keep_clear: people (with room for their file ring, name and avatar)

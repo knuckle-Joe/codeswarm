@@ -83,6 +83,20 @@ def build_parser():
     g = p.add_argument_group("people")
     g.add_argument("--merge-identities", dest="merge_identities", action=argparse.BooleanOptionalAction,
                    default=None, help="treat names/emails/GitHub logins of one person as one (default on)")
+    g.add_argument("--folders", metavar="auto|0|1|2|3",
+                   help="show folders instead of files: auto = for very large projects only (default), 0 = files, "
+                        "1-3 = folders that many levels deep (drivers/net/, fs/btrfs/ ...)")
+    g.add_argument("--file-motion", choices=["settle", "original"],
+                   help="settle = every file reaches its person quickly and stays (default); original = springy "
+                        "flight that overshoots and circles")
+    g.add_argument("--pace", type=float, metavar="N",
+                   help="at most N commits per second of video: busy periods play slower, the date stays real "
+                        "(default 8, 0 = no limit; --duration turns it off)")
+    g.add_argument("--crowd", dest="crowd_target", type=int, metavar="N",
+                   help="busy histories fade faster so about N people stay on screen (default 60, 0 = original)")
+    g.add_argument("--person-spacing", type=float, metavar="PX",
+                   help="people closer than PX (before ui scale) are pushed apart so avatars do not stack "
+                        "(default 70, 0 = original)")
     g.add_argument("--keep-bots", dest="exclude_bots", action="store_false", default=None,
                    help="show dependabot, pre-commit-ci and other bots (hidden by default)")
     g.add_argument("--alias", action="append", metavar="'OLD=NEW'", help="show OLD as NEW (repeatable)")
@@ -101,6 +115,9 @@ def build_parser():
                    help="picture for people without one (default identicon)")
     g.add_argument("--avatar-dir", dest="local_avatar_dir", metavar="DIR", help="folder for --avatars local")
     g.add_argument("--github-token", help="GitHub token for avatar lookups (or set GITHUB_TOKEN)")
+    g.add_argument("--avatar-focus", type=int, metavar="N",
+                   help="pictures shown only for the N most active people lately and whoever is committing; "
+                        "the others show their name (default 15, 0 = everyone alive)")
     g.add_argument("--avatar-limit", type=int, metavar="N",
                    help="pictures for the N most active people only, the others show their name (default 1000, 0 = everyone)")
     g.add_argument("--github-api-budget", type=int, help="max GitHub API calls without a token (default 50)")
@@ -247,7 +264,8 @@ def _overrides(a):
         "show_user_name", "draw_names_sharp", "draw_names_halos",
         "draw_files_sharp", "draw_files_fuzzy", "draw_files_jelly", "circular_avatars",
         "legacy_alpha_wrap", "merge_identities", "exclude_bots", "colors", "avatar_size",
-        "gravatar_fallback", "local_avatar_dir", "github_api_budget", "avatar_limit", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
+        "gravatar_fallback", "local_avatar_dir", "github_api_budget", "avatar_limit", "avatar_focus",
+        "crowd_target", "person_spacing", "folders", "file_motion", "pace", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
         "caption_style", "caption_color", "legend_font", "popular_count", "popular_marks", "show_stats", "stats_window_days",
         "people_count", "histogram_scale", "histogram_max", "popular_style", "popular_window_days", "accent",
         "commit_text", "commit_text_seconds", "commit_text_max", "ticker_lines", "subject_length",
@@ -439,6 +457,15 @@ def main(argv=None):
         from .colors import repo_rules
         cfg["color_rules"] = repo_rules(events)
     say("Colours  : %s (%s)" % (mode, ", ".join(r["label"].split("  ")[0] for r in cfg["color_rules"]) or "Misc only"))
+    from .folders import aggregate, choose_depth
+    depth = choose_depth(events, cfg.get("folders", 0))
+    if depth:
+        n_files = len(set(e.path for e in events))
+        events = aggregate(events, depth)
+        cfg["_folders"] = depth
+        say("Folders  : %d levels deep (%s files -> %s folders, %s changes)"
+            % (depth, "{:,}".format(n_files), "{:,}".format(len(set(e.path for e in events))),
+               "{:,}".format(len(events))))
 
     _apply_linger(cfg, a)
     try:
@@ -465,6 +492,7 @@ def main(argv=None):
     intro_s = a.intro if a.intro is not None else (3.0 if a.title else 0.0)
     credits_s = a.credits or 0.0
     if a.duration:
+        cfg["pace"] = 0                         # a fixed length and a pace limit cannot both hold
         _apply_linger(cfg, a)
         extra = int(round((intro_s + credits_s) * cfg["fps"])) + int(cfg.get("linger_frames", 0))
         target = max(int(a.duration * cfg["fps"]) - extra, 2)

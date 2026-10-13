@@ -18,7 +18,8 @@ from collections import namedtuple
 from .util import say, warn
 
 # author = display identity (after merging); name/email = raw values from git
-Event = namedtuple("Event", "date author path status commit email name repo", defaults=("", "", ""))
+# kind: the real file path when path is a folder (--folders), for the colours
+Event = namedtuple("Event", "date author path status commit email name repo kind", defaults=("", "", "", ""))
 CACHE_VERSION = "v3"          # v3: commit date read too (impossible author dates)
 
 AUTHOR_DATE_SPAN = 10 * 365 * 86400  # an author date this far before the commit date is a broken clock
@@ -357,7 +358,7 @@ def write_event_cache(path, events):
     tmp = path + ".tmp"
     with gzip.open(tmp, "wt", encoding="utf-8") as fh:
         for e in events:
-            fh.write(json.dumps(list(e), ensure_ascii=True) + "\n")
+            fh.write(json.dumps(list(e)[:8], ensure_ascii=True) + "\n")
     os.replace(tmp, path)
 
 

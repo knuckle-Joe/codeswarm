@@ -136,7 +136,11 @@ def estimate_frames(events, cfg, max_frames=None, show=None):
     if not events:
         return 0
     delta = int(86400000 / cfg["frames_per_day"])
-    n = (events[-1].date - events[0].date) // delta + 1 + int(cfg.get("linger_frames", 0))
+    if cfg.get("pace"):
+        n = Swarm.paced_frames(events, delta, float(cfg["pace"]) / float(cfg.get("fps", 24)))
+        n += int(cfg.get("linger_frames", 0))
+    else:
+        n = (events[-1].date - events[0].date) // delta + 1 + int(cfg.get("linger_frames", 0))
     if show:
         n += show.intro_frames + show.credits_frames
     return min(n, max_frames) if max_frames else n
