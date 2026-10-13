@@ -376,7 +376,11 @@ class Fonts:
             clean = "".join(ch for ch in text if ch.isspace() or not self._missing(f, ch))
             if clean != text:
                 text = " ".join(clean.split()) or " "
-        surf = f.render(text, True, (255, 255, 255))
+        try:
+            surf = f.render(text, True, (255, 255, 255))
+        except (self.pg.error, ValueError):            # "Text has zero width" on other pygame versions
+            surf = self.pg.Surface((1, f.get_height()), self.pg.SRCALPHA, 32)
+            shadow = False
         if shadow:
             # dark rim around the letters: readable over glows and lines
             ow = max(1, f.get_height() // 9)
@@ -389,7 +393,11 @@ class Fonts:
             surf = out
         surf = surf.convert_alpha() if self.pg.display.get_init() and self.pg.display.get_surface() else surf
         w, h = surf.get_size()
-        w, h = max(w, 1), max(h, 1)
+        if w < 1 or h < 1:
+            # text that draws nothing (only invisible characters such as a
+            # zero-width space): some pygame versions return an empty image
+            surf = self.pg.Surface((1, max(h, 1)), self.pg.SRCALPHA, 32)
+            w, h = surf.get_size()
         data = self.pg.image.tobytes(surf, "RGBA", False)
         tex = self.ctx.texture((w, h), 4, data)
         tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
