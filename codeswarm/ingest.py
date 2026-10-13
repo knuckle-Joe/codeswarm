@@ -19,8 +19,9 @@ from .util import say, warn
 
 # author = display identity (after merging); name/email = raw values from git
 Event = namedtuple("Event", "date author path status commit email name repo", defaults=("", "", ""))
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"          # v3: commit date read too (impossible author dates)
 
+AUTHOR_DATE_SPAN = 10 * 365 * 86400  # an author date this far before the commit date is a broken clock
 _URL_RE = re.compile(r"^(https?://|git@|ssh://|git://)")
 _SHORT_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")   # owner/repo
 
@@ -96,7 +97,7 @@ def head_commit(repo, branch=None):
 def build_log_args(opts):
     args = ["-c", "core.quotepath=off", "log", "-z", "--name-status",
             "--use-mailmap", "--no-merges",
-            "--format=%x1e%H%x1f%at%x1f%aN%x1f%aE"]
+            "--format=%x1e%H%x1f%at%x1f%aN%x1f%aE%x1f%ct"]
     if opts.get("renames") == "legacy":
         args.append("--no-renames")
     elif opts.get("_partial_clone"):
@@ -115,7 +116,13 @@ def build_log_args(opts):
 
 
 def parse_log(raw, opts):
-    """Parse `git log -z --name-status --format=<RS>H<US>at<US>aN<US>aE` output."""
+    """Parse `git log -z --name-status --format=<RS>H<US>at<US>aN<US>aE<US>ct` output.
+
+    The animation uses the author date (when the change was written), as the
+    original did.  Some histories hold impossible author dates from a machine
+    with a broken clock (1970, or decades ahead); when the author date is more
+    than a day after the commit date, or more than AUTHOR_DATE_SPAN before it,
+    the commit date (when the change was applied) is used instead."""
     author_key = opts.get("author_key", "name")
     renames = opts.get("renames", "new")
     include = opts.get("include") or []
@@ -129,17 +136,24 @@ def parse_log(raw, opts):
         return True
 
     events = []
+    bad_dates = []
     text = raw.decode("utf-8", "replace")
     for chunk in text.split("\x1e"):
         if not chunk:
             continue
         parts = chunk.split("\0")
         header = parts[0].split("\x1f")
-        if len(header) != 4:
+        if len(header) == 4:                    # old format (no commit date)
+            header = header + [header[1]]
+        if len(header) != 5:
             warn("skipping malformed commit header: %r" % parts[0][:80])
             continue
-        sha, at, name, email = header
-        date_ms = int(at) * 1000
+        sha, at, name, email, ct = header
+        a_s, c_s = int(at), int(ct or at)
+        if a_s > c_s + 86400 or a_s < c_s - AUTHOR_DATE_SPAN:
+            bad_dates.append((a_s, sha))
+            a_s = c_s
+        date_ms = a_s * 1000
         author = email if author_key == "email" else name
         toks = parts[1:]
         if toks and toks[0].startswith("\n"):
@@ -169,6 +183,12 @@ def parse_log(raw, opts):
     if lo is not None or hi is not None:
         events = [e for e in events
                   if (lo is None or e.date >= lo) and (hi is None or e.date <= hi)]
+    if bad_dates:
+        import datetime
+        lo, hi = min(a for a, _ in bad_dates), max(a for a, _ in bad_dates)
+        fmt = lambda t: datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%d")
+        say("Dates    : %d commit%s had an impossible author date (%s ... %s); the commit date is used"
+            % (len(bad_dates), "s" if len(bad_dates) > 1 else "", fmt(lo), fmt(hi)))
     # stable chronological order (git gives newest first)
     events.sort(key=lambda e: e.date)
     return events

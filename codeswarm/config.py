@@ -61,6 +61,7 @@ DEFAULTS = {
     "highlight_pct": 5,
     "physics_engine": "orderly",
     "avatars": "auto",             # auto | github | gravatar | local | none
+    "avatar_limit": 1000,          # pictures for the N most active people (0 = everyone)
     "github_api_budget": 50,       # max GitHub API lookups per run without a token
     "gravatar_fallback": "identicon",
     "avatar_size": 40,

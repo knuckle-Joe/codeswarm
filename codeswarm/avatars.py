@@ -266,6 +266,10 @@ class AvatarStore:
         # faces you see most are real pictures; each later run with a fresh
         # budget upgrades the next people (lookups are cached)
         items = sorted(people.values(), key=lambda p: (-p.events, p.display))
+        limit = int(self.cfg.get("avatar_limit", 1000) or 0)
+        if limit and len(items) > limit:
+            # the rest appear briefly: names only (a big history has tens of thousands)
+            items = items[:limit]
         self.api_allowed = set()
         if self.mode == "github" and self.slug:
             left = self.budget

@@ -103,7 +103,9 @@ def build_people(events, cfg):
     for (name, email) in counts:
         node = (name, email)
         uf.find(node)
-        if not merge:
+        # a bot identity is never merged: a robot that sends mail from a real
+        # person's address (kbuild test robot) must not hide that person
+        if not merge or (drop_bots and is_bot(name, email)):
             continue
         nn = norm_name(aliases.get(norm_name(name), name))
         el = (email or "").strip().casefold()
@@ -159,9 +161,10 @@ def build_people(events, cfg):
     out = []
     dropped = Counter()
     for e in events:
-        disp = node_to_display[(e.name or e.author, e.email)]
+        raw = (e.name or e.author, e.email)
+        disp = node_to_display[raw]
         p = people[disp]
-        if (drop_bots and any(is_bot(n, em) for n in p.names for em in p.emails)) or \
+        if (drop_bots and is_bot(*raw)) or \
                 any(fnmatch.fnmatch(disp.casefold(), pat) for pat in excl):
             dropped[disp] += 1
             continue

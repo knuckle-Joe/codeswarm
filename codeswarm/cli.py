@@ -101,6 +101,8 @@ def build_parser():
                    help="picture for people without one (default identicon)")
     g.add_argument("--avatar-dir", dest="local_avatar_dir", metavar="DIR", help="folder for --avatars local")
     g.add_argument("--github-token", help="GitHub token for avatar lookups (or set GITHUB_TOKEN)")
+    g.add_argument("--avatar-limit", type=int, metavar="N",
+                   help="pictures for the N most active people only, the others show their name (default 1000, 0 = everyone)")
     g.add_argument("--github-api-budget", type=int, help="max GitHub API calls without a token (default 50)")
     g.add_argument("--size", type=_size, help="frame size, e.g. 1280x720")
     g.add_argument("--fps", type=int, help="frames per second of the window / video")
@@ -245,7 +247,7 @@ def _overrides(a):
         "show_user_name", "draw_names_sharp", "draw_names_halos",
         "draw_files_sharp", "draw_files_fuzzy", "draw_files_jelly", "circular_avatars",
         "legacy_alpha_wrap", "merge_identities", "exclude_bots", "colors", "avatar_size",
-        "gravatar_fallback", "local_avatar_dir", "github_api_budget", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
+        "gravatar_fallback", "local_avatar_dir", "github_api_budget", "avatar_limit", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
         "caption_style", "caption_color", "legend_font", "popular_count", "popular_marks", "show_stats", "stats_window_days",
         "people_count", "histogram_scale", "histogram_max", "popular_style", "popular_window_days", "accent",
         "commit_text", "commit_text_seconds", "commit_text_max", "ticker_lines", "subject_length",

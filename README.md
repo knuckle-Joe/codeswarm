@@ -115,7 +115,7 @@ codeswarm org/backend org/frontend --colors repo --title "The platform" -o platf
 
 Names and emails of one person are merged (shared email, same name ignoring case and accents, GitHub login from noreply emails), after `.mailmap`. Bots are hidden. `--people people.csv` shows who was merged, `--alias "old=New"` fixes a case by hand, `--exclude-author GLOB` hides people, and `--keep-bots` and `--no-merge-identities` give the original behaviour.
 
-Avatars (`--avatars auto|github|gravatar|local|none`): GitHub pictures for GitHub repositories (most active people first; without a token GitHub allows 60 lookups an hour, set `GITHUB_TOKEN` to lift that), Gravatar or an identicon otherwise, and `--avatar-dir` for your own pictures. Everything is cached, and `--offline` never touches the network.
+Avatars (`--avatars auto|github|gravatar|local|none`): GitHub pictures for GitHub repositories (most active people first; without a token GitHub allows 60 lookups an hour, set `GITHUB_TOKEN` to lift that), Gravatar or an identicon otherwise, and `--avatar-dir` for your own pictures. Only the 1,000 most active people get a picture (`--avatar-limit`, 0 for everyone): a very large history has tens of thousands of contributors, most of them on screen for a few seconds. Everything is cached, and `--offline` never touches the network.
 
 ## Kinds of files
 
@@ -175,6 +175,8 @@ The simulation was checked frame by frame against the original Java program, com
 
 - No log export or XML: the history is read straight from git, from a clone with history only (no file contents), with exact renames, the author date (not the date a commit was applied), `.mailmap`, merged identities and hidden bots.
 - Dates given to `--since` and `--until` filter on the author date.
+- Impossible author dates are corrected: a few patches in large histories come from a machine with a broken clock (1970, or decades in the future), which would stretch the animation over a century. When an author date is more than a day after the commit date, or more than ten years before it, the commit date is used instead, and the run says how many were corrected.
+- Bots are recognised per identity, before people are merged, so a robot that sends mail from a real developer's address hides only the robot.
 
 **Motion**
 
@@ -211,6 +213,7 @@ python tools/p7_check.py owner/repo                  # histogram, panel numbers,
 python tools/p8_check.py owner/repo                  # messages, rings, releases, name overlap, fonts
 python tools/p9_check.py owner/repo                  # tracked files land and stick, ticker
 python tools/p10_check.py owner/repo                 # swarm out of the panels, names stay put
+python tools/p11_check.py                            # broken-clock dates, robots, avatar limit (builds its own test repository)
 python tools/edge_check.py owner/repo                # share of files off screen
 ```
 
@@ -282,6 +285,7 @@ Defaults are those of the default look (no `--preset`) at 1920x1080; sizes are b
 | `--avatar-fallback` | identicon \| retro \| robohash \| monsterid \| wavatar \| mp \| none | identicon | picture for people without one (default identicon) |
 | `--avatar-dir` | DIR |  | folder for --avatars local |
 | `--github-token` | GITHUB_TOKEN |  | GitHub token for avatar lookups (or set GITHUB_TOKEN) |
+| `--avatar-limit` | N | 1000 | pictures for the N most active people only, the others show their name (default 1000, 0 = everyone) |
 | `--github-api-budget` | GITHUB_API_BUDGET | 50 | max GitHub API calls without a token (default 50) |
 | `--size` | SIZE | 1920x1080 | frame size, e.g. 1280x720 |
 | `--fps` | FPS | 24 | frames per second of the window / video |

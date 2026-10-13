@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeswarm"
-version = "0.14.0"
+version = "0.15.0"
 description = "Animate the commit history of a git repository (code_swarm rewrite)"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }
