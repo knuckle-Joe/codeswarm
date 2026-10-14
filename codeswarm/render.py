@@ -611,6 +611,8 @@ class Renderer:
                 data = np.column_stack([a, b, np.full(len(idx), 0.35), np.ones((len(idx), 3)), alpha])
                 self._draw_instances("segment", data, world=True)
 
+        if getattr(sw, "regions", None) and st.get("show_regions", True):
+            self._draw_regions(sw, st)
         living_p = np.nonzero(p.life[: p.n] > 0)[0]
         self._subjects = self._name_subjects(sw) if st.get("commit_text") and \
             self.cfg.get("commit_text", "off") in ("names", "both") else {}
@@ -668,6 +670,120 @@ class Renderer:
                               fc + [a], align_x="right", align_y="baseline")
         self._overlays_last(st, fc)
 
+    def _glow_texture(self):
+        """White square whose alpha rises smoothly from the edges to the middle
+        (for the neighbourhood cells), made once."""
+        tex = getattr(self, "_glow_tex", None)
+        if tex is None:
+            n = 128
+            t = (np.arange(n) + 0.5) / n
+            edge = np.minimum(t, 1 - t) * 2                     # 0 at the border, 1 in the middle
+            ramp = np.clip(edge / 0.55, 0, 1)
+            ramp = ramp * ramp * (3 - 2 * ramp)                 # smoothstep
+            a = np.outer(ramp, ramp) * (0.55 + 0.45 * np.outer(edge, edge))
+            rgba = np.zeros((n, n, 4), np.uint8)
+            rgba[..., :3] = 255
+            rgba[..., 3] = np.clip(a * 255, 0, 255).astype(np.uint8)
+            tex = self.ctx.texture((n, n), 4, rgba.tobytes())
+            tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self._glow_tex = tex
+        return tex
+
+    def _draw_regions(self, sw, st=None):
+        """Neighbourhoods.  Grid: the whole frame is tiled 3 x 3; each cell
+        glows faintly in its legend colour, the glows reach into the next cell
+        so the colours blend into one field, and the folder name is written in
+        the caption font, in a neon shade of the cell's colour.  A name whose
+        spot is under a panel slides toward the middle of the screen (staying
+        in its cell).  Ring: names around an oval."""
+        rects = getattr(sw, "region_rect", None)
+        if rects:
+            k = self.k
+            tex = self._glow_texture()
+            tex.use(0)
+            self.image_prog["u_tex"].value = 0
+            for name in sw.regions:
+                x0, y0, x1, y1 = [v * k for v in rects[name]]
+                cw, ch = x1 - x0, y1 - y0
+                c = [v / 255.0 for v in sw.region_color.get(name, (128, 128, 128))]
+                # 1.5x the cell: soft edges overlap the neighbours (seamless)
+                self.image_prog["u_rect"].value = (float(x0 - cw * 0.25), float(y0 - ch * 0.25),
+                                                   float(cw * 1.5), float(ch * 1.5))
+                self.image_prog["u_color"].value = (c[0], c[1], c[2], 0.11)
+                self.image_vao.render(moderngl.TRIANGLE_STRIP)
+            size = max(12, self.h // 34)
+            self.region_labels = {}
+            # glide only from the frame just drawn (frames skipped: go straight to the spot)
+            glide = getattr(self, "_label_frame", None) == sw.frame - 1
+            self._label_frame = sw.frame
+            # where the panels are this frame (measured, so a first frame knows too)
+            panels = self.panel_rects(sw, st) if st is not None else list(getattr(self, "_panels_prev", []))
+            for name in sw.regions:
+                x0, y0, x1, y1 = [v * k for v in rects[name]]
+                tw, th = self._styled_size(name, size)
+                cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+                held = self.__dict__.setdefault("_label_goal", {}).get(name)
+                wait = self.__dict__.setdefault("_label_wait", {})
+                pref = self._label_spot(x0, y0, x1, y1, tw, th, panels)   # its best spot in the cell, if one is clear
+                best = pref
+                if held is not None and held[2] == (tw, th) and self._label_free(held[0], held[1], tw, th, panels):
+                    # still clear: the name stays where it is; it goes back to its
+                    # better spot only once that has been clear for 5 seconds
+                    far = pref is not None and math.hypot(pref[0] - held[0], pref[1] - held[1]) > 30 * k
+                    wait[name] = wait.get(name, 0) + 1 if far else 0
+                    if wait[name] < 5 * int(self.cfg.get("fps", 30)):
+                        best = held[:2]
+                    else:
+                        wait[name] = 0
+                if best is None:
+                    # no free spot in the cell: let it reach half a cell toward the screen centre
+                    hw, hh = (x1 - x0) / 2.0, (y1 - y0) / 2.0
+                    ex0 = x0 - hw if cx > self.w * 0.6 else x0
+                    ex1 = x1 + hw if cx < self.w * 0.4 else x1
+                    ey0 = y0 - hh if cy > self.h * 0.6 else y0
+                    ey1 = y1 + hh if cy < self.h * 0.4 else y1
+                    best = self._label_spot(ex0, ey0, ex1, ey1, tw, th, panels, (cx, cy), force=True)
+                self._label_goal[name] = (best[0], best[1], (tw, th))
+                # glide to a new spot over about half a second instead of jumping
+                cur = self.__dict__.setdefault("_label_at", {}).get(name)
+                if cur is None or not glide or math.hypot(best[0] - cur[0], best[1] - cur[1]) < 1.0:
+                    cur = best
+                else:
+                    cur = (cur[0] + 0.15 * (best[0] - cur[0]), cur[1] + 0.15 * (best[1] - cur[1]))
+                self._label_at[name] = cur
+                px, py = cur
+                self.region_labels[name] = (px - tw / 2.0, py - th / 2.0, px + tw / 2.0, py + th / 2.0)
+                panels = panels + [self.region_labels[name]]   # names keep clear of each other too
+                self.styled(name, size, px, py, self._neon(sw.region_color.get(name, (128, 128, 128))),
+                            0.75, "center", "center", style="outline")
+            return
+        size = max(14, self.h // 26)
+        for name in sw.regions:
+            ax, ay = sw.region_anchor[name]
+            self.styled(name, size, ax * self.k, ay * self.k, [150, 160, 190], 0.22, "center", "center",
+                        style="outline")
+
+    @staticmethod
+    def _neon(rgb):
+        """A bright, saturated shade of a colour (grey stays a light grey)."""
+        r, g, b = [x / 255.0 for x in rgb]
+        h, s_, v = colorsys.rgb_to_hsv(r, g, b)
+        s_ = min(1.0, s_ * 1.15) if s_ > 0.08 else 0.0
+        return [int(round(x * 255)) for x in colorsys.hsv_to_rgb(h, s_ * 0.85, 1.0)]
+
+    def _styled_size(self, text, size):
+        """Width and height a caption-style text takes (without its glow)."""
+        import pygame
+        cache = self.__dict__.setdefault("_styled_sz", {})
+        key = (text, int(size))
+        if key not in cache:
+            try:
+                f = pygame.font.Font(self.caption_font_path, int(size))
+            except (OSError, FileNotFoundError):
+                f = self.fonts.sized(int(size), True)
+            cache[key] = f.size(text)
+        return cache[key]
+
     def _draw_caption(self):
         cfg = self.cfg
         if cfg.get("caption"):
@@ -675,6 +791,40 @@ class Renderer:
             hgt = self.styled(cfg["caption"], size, 8, 8, cfg.get("caption_color", [110, 230, 255]))
             self._top = 8 + hgt + 12
             self._panels_now.append((0, 0, 8 + self._styled_w(cfg["caption"], size), self._top))
+
+    def _label_free(self, qx, qy, tw, th, panels):
+        """Is a zone name centred at (qx, qy) clear of the panels (with margin) and of the screen edge?"""
+        m = 22.0 * self.k
+        if qx - tw / 2.0 < 0.03 * self.w or qx + tw / 2.0 > 0.97 * self.w or qy - th / 2.0 < 0.05 * self.h or qy + th / 2.0 > 0.95 * self.h:
+            return False
+        box = (qx - tw / 2.0 - m, qy - th / 2.0 - m, qx + tw / 2.0 + m, qy + th / 2.0 + m)
+        return not any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in panels)
+
+    def _label_spot(self, x0, y0, x1, y1, tw, th, panels, centre=None, force=False):
+        """The spot for a zone name inside (x0, y0, x1, y1) and inside the
+        inner ~90% of the frame, clear of every panel (with the soft backing's
+        margin), nearest the area's middle (pulled a little toward the screen
+        centre).  None when no spot is clear, unless force (then the least covered)."""
+        mx, my = 0.03 * self.w, 0.05 * self.h
+        x0, x1 = max(x0, mx), min(x1, self.w - mx)
+        y0, y1 = max(y0, my), min(y1, self.h - my)
+        cx, cy = centre or ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        gx = np.linspace(x0 + tw / 2.0 + 10, x1 - tw / 2.0 - 10, 17) if x1 - x0 > tw + 20 else np.array([(x0 + x1) / 2.0])
+        gy = np.linspace(y0 + th / 2.0 + 10, y1 - th / 2.0 - 10, 13) if y1 - y0 > th + 20 else np.array([(y0 + y1) / 2.0])
+        m = 22.0 * self.k   # the soft backing reaches this far past a panel
+        best, best_cost = None, None
+        for qx in gx:
+            for qy in gy:
+                box = (qx - tw / 2.0 - m, qy - th / 2.0 - m, qx + tw / 2.0 + m, qy + th / 2.0 + m)
+                cover = sum(max(0.0, min(box[2], q[2]) - max(box[0], q[0])) *
+                            max(0.0, min(box[3], q[3]) - max(box[1], q[1])) for q in panels)
+                dist = math.hypot(qx - cx, qy - cy) + 0.15 * math.hypot(qx - self.w / 2.0, qy - self.h / 2.0)
+                cost = (cover > 0, cover, dist)
+                if best_cost is None or cost < best_cost:
+                    best, best_cost = (float(qx), float(qy)), cost
+        if best_cost is not None and best_cost[0] and not force:
+            return None
+        return best
 
     def panel_rects(self, sw, st):
         """Screen rectangles the panels take this frame (caption, legend, file
@@ -1195,10 +1345,40 @@ class Renderer:
                           fc + [200], None, "center", "center")
 
     def _backing(self, x0, y0, x1, y1):
-        """Soft dark plate so panel text stays readable over the swarm."""
+        """Soft dark plate so panel text stays readable over the swarm: solid
+        behind the text, fading out over a margin around it, so it blends into
+        whatever lies under it (the swarm, a neighbourhood's glow) with no edge."""
         self.__dict__.setdefault("_panels_now", []).append((x0, y0, x1, y1))
-        if self.cfg.get("panel_backing", True):
-            self._draw_instances("rect", np.array([[x0, y0, x1, y1, 0.0, 0.0, 0.0, 0.55]], np.float32))
+        if self.cfg.get("panel_backing", True) and not self.__dict__.get("_measuring"):
+            pad = 18.0 * self.k
+            tex = self._plate_texture()
+            tex.use(0)
+            self.image_prog["u_tex"].value = 0
+            self.image_prog["u_rect"].value = (float(x0 - pad), float(y0 - pad),
+                                               float(x1 - x0 + 2 * pad), float(y1 - y0 + 2 * pad))
+            self.image_prog["u_color"].value = (0.0, 0.0, 0.0, 0.62)
+            self._plate_pad = pad
+            self.image_vao.render(moderngl.TRIANGLE_STRIP)
+
+    def _plate_texture(self):
+        """Alpha 1 in the middle, smooth fall-off to 0 over the outer band.  The
+        band is a fixed share of the texture; the drawn plate is the panel plus
+        a margin, so most of the fall-off happens in that margin."""
+        tex = getattr(self, "_plate_tex", None)
+        if tex is None:
+            n = 256
+            t = (np.arange(n) + 0.5) / n
+            edge = np.minimum(t, 1 - t)                         # 0 at the border, 0.5 in the middle
+            ramp = np.clip(edge / 0.08, 0, 1)
+            ramp = ramp * ramp * (3 - 2 * ramp)
+            a = np.outer(ramp, ramp)
+            rgba = np.zeros((n, n, 4), np.uint8)
+            rgba[..., :3] = 255
+            rgba[..., 3] = np.clip(a * 255, 0, 255).astype(np.uint8)
+            tex = self.ctx.texture((n, n), 4, rgba.tobytes())
+            tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self._plate_tex = tex
+        return tex
 
     def _legend_font(self):
         """Font for the colour legend: the names font, or Orbitron / a .ttf (--legend-font)."""
@@ -1616,7 +1796,8 @@ class Renderer:
         ("b", "debug numbers", "show_debug"), ("E", "physics engine name", "show_engine"),
         ("r", "commit ripples", "ripples"), ("i", "repository stats", "show_stats"),
         ("c", "commit messages", "commit_text"), ("t", "release tags", "show_releases"),
-        ("n", "spread overlapping names", "name_spread"), ("?, F1", "this help", "show_help"),
+        ("n", "spread overlapping names", "name_spread"), ("g", "neighbourhood names", "show_regions"),
+        ("?, F1", "this help", "show_help"),
     ]
 
     def _draw_help(self, st, fc):

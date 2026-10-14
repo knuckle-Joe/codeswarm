@@ -71,6 +71,27 @@ class ColorRules:
         return np.array([128, 128, 128], np.int32)
 
 
+def _base_color_method(self, path, repo=""):
+    """The legend colour of a path (rule colour 1), without drawing a random number."""
+    grp = None
+    for _, rx, c1, _c2 in self.rules:
+        if isinstance(rx, tuple):
+            if rx[0] == "repo":
+                hit = repo == rx[1]
+            else:
+                if grp is None:
+                    grp = self.group_of(path)
+                hit = grp == rx[1]
+        else:
+            hit = rx.fullmatch(path)
+        if hit:
+            return tuple(int(x) for x in c1)
+    return (128, 128, 128)
+
+
+ColorRules.base_color = _base_color_method
+
+
 class Pool:
     """Growable arrays for one node kind."""
 
@@ -228,6 +249,19 @@ class Swarm:
         self._pace_budget = 1.0
         # settle: every file reaches its person's ring with no momentum and locks on
         self.file_motion = c.get("file_motion", "original")
+        # neighbourhoods: people drift toward the area of the part of the project they work on
+        self.nb_count = int(c.get("neighborhoods", 0) or 0)
+        self.regions = []              # region names, busiest first ("drivers/", "fs/" ...)
+        self.region_anchor = {}        # name -> (x, y) in simulation coordinates
+        self.region_depth = 1
+        self.region_rect = {}          # grid layout: name -> (x0, y0, x1, y1) cell
+        self.region_color = {}         # name -> legend colour of its most common kind of file
+        self.nb_layout = c.get("neighborhood_layout", "grid")
+        self.person_region = {}        # person -> region name
+        self._person_rq = {}           # person -> recent region names (last 20 changes)
+        self._person_rc = {}           # person -> {region: count in those}
+        if self.nb_count and events:
+            self._setup_regions(events)
         self.track_target = {}
         self.hub_gather = bool(c.get("hub_gather", False))
         self._hub_slot = {}
@@ -336,6 +370,8 @@ class Swarm:
             else:                                   # PersonNode.freshen
                 p.life[pi] = self.person_life0
                 p.touches[pi] += 1
+            if self.regions:
+                self._note_region(pi, e)
             cc = self.person_color_count[pi]        # addColor: lerpColor(flavor, c, 1/count)
             fl = self.person_flavor[pi]
             self.person_flavor[pi] = fl + (c - fl) * (1.0 / cc)
@@ -466,6 +502,8 @@ class Swarm:
             if self.person_spacing and len(p_alive) > 1:
                 self._space_people(p_alive)
 
+            if self.regions:
+                self._pull_to_regions(p_alive)
             if self.keepout:
                 self._keep_out(p_alive)
             hubs = self._update_hubs() if self.hub_count else ()
@@ -556,6 +594,102 @@ class Swarm:
                 pp[:, 0] = np.clip(pp[:, 0], np.maximum(m, 50), self.w - np.maximum(m, 50))
                 pp[:, 1] = np.clip(pp[:, 1], np.maximum(m, 45), self.h - np.maximum(m, 15 + self.bottom_reserve))
             p.pos[p_alive] = pp
+
+    # ------------------------------------------------------------------
+    # neighbourhoods
+    def region_of(self, e):
+        """Region of a change: its top folder(s) ('drivers/'), None for files at the top."""
+        parts = (getattr(e, "kind", "") or e.path).split("/")[:-1]
+        if not parts:
+            return None
+        return "/".join(parts[: self.region_depth]) + "/"
+
+    def _setup_regions(self, events):
+        """The busiest top folders become regions, laid out around an oval in
+        the open area (between the file list on the left and the panels).  If
+        one folder holds most of the changes (a src/ monorepo), one level deeper."""
+        from collections import Counter
+        for depth in (1, 2):
+            self.region_depth = depth
+            cnt = Counter(r for r in (self.region_of(e) for e in events) if r)
+            total = float(sum(cnt.values()) or 1)
+            if not cnt or depth == 2 or cnt.most_common(1)[0][1] / total <= 0.6:
+                break
+        names = [n for n, _ in cnt.most_common(min(self.nb_count, 9) if self.nb_layout == "grid" else self.nb_count)]
+        self.regions = names
+        k = len(names)
+        kinds = {}
+        for e in events:
+            r = self.region_of(e)
+            if r in names:
+                c_ = self.colors.base_color(getattr(e, "kind", "") or e.path, getattr(e, "repo", ""))
+                d_ = kinds.setdefault(r, {})
+                d_[c_] = d_.get(c_, 0) + 1
+        for n in names:
+            self.region_color[n] = max(kinds[n].items(), key=lambda kv: kv[1])[0] if kinds.get(n) else (128, 128, 128)
+        if self.nb_layout == "grid":
+            # 3 x 3 over the whole frame; the busiest folder in the middle
+            gx0, gx1, gy0, gy1 = 0.0, float(self.w), 0.0, float(self.h)
+            cw, ch = (gx1 - gx0) / 3.0, (gy1 - gy0) / 3.0
+            # busiest in the middle, then the sides, then the corners
+            order = [(1, 1), (0, 1), (1, 2), (2, 1), (1, 0), (0, 0), (2, 0), (2, 2), (0, 2)]
+            for n, (row, col) in zip(names, order):
+                x0, y0 = gx0 + col * cw, gy0 + row * ch
+                self.region_rect[n] = (x0, y0, x0 + cw, y0 + ch)
+                self.region_anchor[n] = (x0 + cw / 2.0, y0 + ch / 2.0)
+            return
+        cx, cy, rx, ry = self.w * 0.55, self.h * 0.50, self.w * 0.21, self.h * 0.30
+        for i, n in enumerate(names):
+            if k == 1:
+                self.region_anchor[n] = (cx, cy)
+                continue
+            ang = -math.pi / 2 + 2 * math.pi * i / k
+            self.region_anchor[n] = (cx + rx * math.cos(ang), cy + ry * math.sin(ang))
+
+    def _note_region(self, pi, e):
+        r = self.region_of(e)
+        if r not in self.region_anchor:
+            r = None
+        q = self._person_rq.get(pi)
+        if q is None:
+            q = self._person_rq[pi] = deque(maxlen=20)
+            self._person_rc[pi] = {}
+        rc = self._person_rc[pi]
+        if len(q) == q.maxlen:
+            old = q[0]
+            if old is not None:
+                rc[old] -= 1
+                if not rc[old]:
+                    del rc[old]
+        q.append(r)
+        if r is not None:
+            rc[r] = rc.get(r, 0) + 1
+        if rc:
+            self.person_region[pi] = max(rc.items(), key=lambda kv: (kv[1], -self.regions.index(kv[0])))[0]
+        else:
+            self.person_region.pop(pi, None)
+
+    def _pull_to_regions(self, alive):
+        """People drift toward their region's spot (at most 0.6 px a frame,
+        gentle enough for spacing and keep-clear to keep the area tidy)."""
+        p = self.people
+        for pi in alive:
+            r = self.person_region.get(int(pi))
+            if r is None:
+                continue
+            ax, ay = self.region_anchor[r]
+            rect = self.region_rect.get(r)
+            if rect is not None:
+                # grid: anywhere inside the cell is fine; outside, head for its nearest inner point
+                m = 30.0
+                ax = min(max(p.pos[pi][0], rect[0] + m), rect[2] - m)
+                ay = min(max(p.pos[pi][1], rect[1] + m), rect[3] - m)
+            dx, dy = ax - p.pos[pi][0], ay - p.pos[pi][1]
+            d = math.hypot(dx, dy)
+            if d > (1.0 if rect is not None else 30.0):
+                step = min(0.6, 0.004 * d)
+                p.pos[pi][0] += dx / d * step
+                p.pos[pi][1] += dy / d * step
 
     @staticmethod
     def paced_frames(events, delta, pace_per_frame):

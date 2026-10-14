@@ -114,6 +114,8 @@ DEFAULTS = {
     "hub_gather": False,           # also pull people toward their hubs (0.10 behaviour)
     "dim_idle_avatars": False,     # avatars of idle people fade like their names
     "keep_clear": False,           # people (and their files) stay out of the panels
+    "neighborhood_layout": "grid", # grid = 3 x 3 glowing cells | ring = names around an oval
+    "neighborhoods": 0,            # people drift toward the area of the top folder they work on (N regions, 0 = off)
     "folders": 0,                  # 0 = files | 1..3 = folders that deep | auto = folders for very large projects
     "file_motion": "original",     # original = springy | settle = every file reaches its person and stays
     "pace": 0,                     # at most this many commits per second of video (0 = no limit)

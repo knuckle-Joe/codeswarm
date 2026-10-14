@@ -13,7 +13,7 @@ TOGGLE_KEYS = {
     "E": "show_engine", "f": "draw_files_fuzzy", "h": "show_history", "j": "draw_files_jelly",
     "l": "show_legend", "p": "show_popular", "s": "draw_names_sharp", "S": "draw_files_sharp",
     "?": "show_help", "r": "ripples", "i": "show_stats",
-    "c": "commit_text", "t": "show_releases", "n": "name_spread",
+    "c": "commit_text", "t": "show_releases", "n": "name_spread", "g": "show_regions",
 }
 
 
@@ -27,7 +27,7 @@ KEY_HELP = [
     "       b  debug numbers             E  physics engine name",
     "       r  commit ripples            i  repository stats",
     "       c  commit messages           t  release tags",
-    "       n  spread overlapping names",
+    "       n  spread overlapping names   g  neighbourhood names",
     "       ?, F1  help panel",
 ]
 
@@ -93,6 +93,7 @@ def initial_state(cfg):
     st["commit_text"] = cfg.get("commit_text", "off") != "off"
     st["show_releases"] = bool(cfg.get("show_releases", False))
     st["name_spread"] = cfg.get("name_layout", "off") == "spread"
+    st["show_regions"] = True
     st["show_help"] = False
     return st
 

@@ -73,7 +73,8 @@ Every key press is also echoed in the terminal.
 | b | debug numbers | E | physics engine name |
 | r | commit ripples | i | repository panel |
 | c | commit messages | t | release tags |
-| n | spread overlapping names | ?, F1 | help panel (shows what is on and off) |
+| n | spread overlapping names | g | neighbourhood names (with `--neighborhoods`) |
+| ?, F1 | help panel (shows what is on and off) | | |
 
 ## What you see
 
@@ -109,6 +110,7 @@ codeswarm org/backend org/frontend --colors repo --title "The platform" -o platf
 - `--max-gap DAYS` shortens quiet periods to DAYS; the date shown stays real and "... 10 months later" appears at each jump.
 - `--duration SECONDS` picks the speed so the whole video lasts that long.
 - `--title`, `--subtitle`, `--intro SECONDS`: an intro card (date range, people, commits, files, legend). `--credits SECONDS`: a closing card with the most active people and their avatars.
+- `--neighborhoods` (optional): the nine busiest top folders each get a cell of a 3 x 3 grid that covers the whole frame, the busiest in the middle. Each cell glows faintly in the legend colour of the kind of file that dominates that folder, and the glows blend into one another with no seams. The folder's name is written in the caption font, in a brighter neon shade of its cell, at the free spot nearest the cell's middle: never under a panel, never on the screen edge (a cell mostly covered by a panel puts its name a little toward the centre). People gather in the cell of the folder they have mostly worked in lately. With zones on, people are no longer kept out from under the panels (`--keep-clear` brings that back); the panels sit on soft dark plates that fade into the zones. A project whose code sits under one folder (`src/`) is split one level deeper. `--neighborhood-layout ring` places the names around an oval instead. Key `g` hides the cells.
 - Several sources make one swarm; paths get the repository name as a prefix (`--no-prefix` to turn that off) and a person in both repositories is one person.
 
 ## People and avatars
@@ -218,6 +220,7 @@ python tools/p10_check.py owner/repo                 # swarm out of the panels, 
 python tools/p11_check.py                            # broken-clock dates, robots, avatar limit (builds its own test repository)
 python tools/p12_check.py owner/repo                 # crowded histories: crowd size, spacing, avatar focus
 python tools/p13_check.py owner/repo                 # very busy histories: folders, settle, pace limit
+python tools/p14_check.py owner/repo                 # neighbourhoods
 python tools/edge_check.py owner/repo                # share of files off screen
 ```
 
@@ -274,6 +277,8 @@ Defaults are those of the default look (no `--preset`) at 1920x1080; sizes are b
 | flag | value | default | what it does |
 |---|---|---|---|
 | `--merge-identities` / `--no-merge-identities` |  | on | treat names/emails/GitHub logins of one person as one (default on) |
+| `--neighborhoods` | N | 0 | people gather in an area of the screen for the top folder they work on (drivers/, fs/, net/ ...), up to N areas tiling the whole frame (alone: 9); turns --keep-clear off unless given (default off) |
+| `--neighborhood-layout` | grid \| ring | grid | grid = 3 x 3 cells glowing in the folder's legend colour (default); ring = names around an oval |
 | `--folders` | auto \| 0 \| 1 \| 2 \| 3 | auto | show folders instead of files: auto = for very large projects only (default), 0 = files, 1-3 = folders that many levels deep (drivers/net/, fs/btrfs/ ...) |
 | `--file-motion` | settle \| original | settle | settle = every file reaches its person quickly and stays (default); original = springy flight that overshoots and circles |
 | `--pace` | N | 8 | at most N commits per second of video: busy periods play slower, the date stays real (default 8, 0 = no limit; --duration turns it off) |

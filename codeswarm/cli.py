@@ -83,6 +83,11 @@ def build_parser():
     g = p.add_argument_group("people")
     g.add_argument("--merge-identities", dest="merge_identities", action=argparse.BooleanOptionalAction,
                    default=None, help="treat names/emails/GitHub logins of one person as one (default on)")
+    g.add_argument("--neighborhoods", type=int, nargs="?", const=9, metavar="N",
+                   help="people gather in an area of the screen for the top folder they work on "
+                        "(drivers/, fs/, net/ ...), up to N areas tiling the whole frame (alone: 9); turns --keep-clear off unless given (default off)")
+    g.add_argument("--neighborhood-layout", choices=["grid", "ring"],
+                   help="grid = 3 x 3 cells glowing in the folder's legend colour (default); ring = names around an oval")
     g.add_argument("--folders", metavar="auto|0|1|2|3",
                    help="show folders instead of files: auto = for very large projects only (default), 0 = files, "
                         "1-3 = folders that many levels deep (drivers/net/, fs/btrfs/ ...)")
@@ -265,7 +270,7 @@ def _overrides(a):
         "draw_files_sharp", "draw_files_fuzzy", "draw_files_jelly", "circular_avatars",
         "legacy_alpha_wrap", "merge_identities", "exclude_bots", "colors", "avatar_size",
         "gravatar_fallback", "local_avatar_dir", "github_api_budget", "avatar_limit", "avatar_focus",
-        "crowd_target", "person_spacing", "folders", "file_motion", "pace", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
+        "crowd_target", "person_spacing", "folders", "file_motion", "pace", "neighborhoods", "neighborhood_layout", "ripples", "text_shadow", "dim_idle_names", "show_engine", "caption_font",
         "caption_style", "caption_color", "legend_font", "popular_count", "popular_marks", "show_stats", "stats_window_days",
         "people_count", "histogram_scale", "histogram_max", "popular_style", "popular_window_days", "accent",
         "commit_text", "commit_text_seconds", "commit_text_max", "ticker_lines", "subject_length",
@@ -341,6 +346,8 @@ def main(argv=None):
         cfg = build_config(preset, a.config, _overrides(a), java_escapes=a.java_escapes)
         if a.popular_window_days == 0:          # --popular-window 0 = all time
             cfg["popular_window_days"] = None
+        if cfg.get("neighborhoods") and a.keep_clear is None:
+            cfg["keep_clear"] = False              # the zones use the whole frame, panels included
     except (ValueError, OSError) as exc:
         warn(exc)
         return 2
