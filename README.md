@@ -107,6 +107,88 @@ codeswarm owner/repo --max-gap 14 --duration 120 --title "My project" --credits 
 codeswarm org/backend org/frontend --colors repo --title "The platform" -o platform.mp4
 ```
 
+### Ideas to try
+
+Some histories with a story in them, and settings that bring it out. Big repositories take a while to clone the first time; `--since` / `--until` keep the first run short.
+
+**Beginnings**
+
+```sh
+# Git hosting itself: Linus Torvalds' first weeks, then the hand-over to Junio Hamano in July 2005
+codeswarm git/git --until 2006-01-01 --frames-per-day 60 --title "Git, year one"
+
+# The Linux kernel's first two years in Git (very large: folders and the pace limit keep it readable)
+codeswarm torvalds/linux --until 2007-07-01 --folders 2 --title "Linux 2.6 in Git"
+
+# llama.cpp: a weekend project in March 2023 that pulled in hundreds of people within months
+codeswarm ggml-org/llama.cpp --until 2023-09-01 --frames-per-day 60 --credits 8
+```
+
+**Where people work: neighbourhoods**
+
+```sh
+# React: people gather in the package they work on (packages/react-dom, react-reconciler ...);
+# React keeps its code under packages/, so the zones go one level deeper by themselves
+codeswarm facebook/react --since 2020-01-01 --neighborhoods --max-gap 7
+
+# Home Assistant: hundreds of integrations under homeassistant/components/, each with its own people
+codeswarm home-assistant/core --since 2024-01-01 --neighborhoods --folders 2 --duration 180
+
+# Rust: compiler, library, tools and tests as separate neighbourhoods
+codeswarm rust-lang/rust --since 2025-01-01 --neighborhoods --commit-text ticker
+```
+
+**One person, then many**
+
+```sh
+# Vim: Bram Moolenaar committed nearly everything for decades; watch the change after August 2023
+codeswarm vim/vim --since 2022-01-01 --max-gap 10 --title "Vim" --subtitle "after Bram"
+
+# Neovim forked from Vim in 2014: the same code, a different way of working
+codeswarm neovim/neovim --until 2016-01-01 --max-gap 7 --credits 8
+```
+
+**Two repositories, one swarm**
+
+```sh
+# Flask and Werkzeug: one colour per repository, and people who work on both show up once
+codeswarm pallets/flask pallets/werkzeug --colors repo --since 2018-01-01 --duration 120
+
+# Vim and Neovim side by side since the fork
+codeswarm vim/vim neovim/neovim --colors repo --since 2014-01-01 --max-gap 14
+```
+
+**Narrowing the view**
+
+```sh
+# Only the documentation: who writes the docs, and when
+codeswarm python/cpython --include 'Doc/**' --since 2017-01-01 --commit-text names
+
+# The code without the tests and the CI
+codeswarm golang/go --since 2023-01-01 --exclude 'test/**' --exclude '**/testdata/**'
+
+# Releases: only real version tags as banners, one per 8 seconds at most
+codeswarm kubernetes/kubernetes --since 2024-01-01 --release-tags 'v1.*' --release-gap 8 --folders 2
+
+# Bots included: how much of the traffic dependabot and friends make
+codeswarm home-assistant/core --since 2025-01-01 --keep-bots --granularity coarse
+
+# Recent work with AI coding agents (they get their own legend group)
+codeswarm modelcontextprotocol/python-sdk --since 2025-01-01 --popular-window 14
+```
+
+**Looks**
+
+```sh
+# The 2009 look, from the code_swarm Stack Exchange setup
+codeswarm pallets/flask --preset classic --until 2012-01-01
+
+# A short teaser: two minutes, fast, no commit text
+codeswarm owner/repo --duration 120 --commit-text off --no-caption --credits 5 -o teaser.mp4
+```
+
+### What the story options do
+
 - `--max-gap DAYS` shortens quiet periods to DAYS; the date shown stays real and "... 10 months later" appears at each jump.
 - `--duration SECONDS` picks the speed so the whole video lasts that long.
 - `--title`, `--subtitle`, `--intro SECONDS`: an intro card (date range, people, commits, files, legend). `--credits SECONDS`: a closing card with the most active people and their avatars.
